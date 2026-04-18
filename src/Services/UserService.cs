@@ -33,14 +33,28 @@ public class UserService(
         };
 
         var result = await userManager.CreateAsync(user, request.Password);
-        if (result.Succeeded) return new RegisterResponse(user.Id.ToString(), user.DisplayName!, user.Email);
+        if (!result.Succeeded)
+        {
+            var errors = result.Errors.ToDictionary(
+                e => e.Code,
+                e => new[] { e.Description }
+            );
+            throw new ValidationException(errors);
+        }
 
-        var errors = result.Errors.ToDictionary(
-            e => e.Code,
-            e => new[] { e.Description }
-        );
-        throw new ValidationException(errors);
+        // Add user to role (default: "User")
+        var roleToAssign = request.Role ?? Common.UserRole.User;
+        var roleResult = await userManager.AddToRoleAsync(user, roleToAssign);
+        if (!roleResult.Succeeded)
+        {
+            var errors = roleResult.Errors.ToDictionary(
+                e => e.Code,
+                e => new[] { e.Description }
+            );
+            throw new ValidationException(errors);
+        }
 
+        return new RegisterResponse(user.Id.ToString(), user.DisplayName!, user.Email);
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request)
@@ -99,14 +113,23 @@ public class UserService(
             throw new InvalidOperationException("Chave JWT não configurada e/ou invalida");
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
-
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var claims = new[]
+
+        // Get user roles
+        var roles = userManager.GetRolesAsync(user).Result;
+
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.Email, user.Email!),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        // Add role claims
+        foreach (var role in roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
 
         var token = new JwtSecurityToken(
             issuer: _jwtOptions.Issuer,

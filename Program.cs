@@ -7,10 +7,12 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
 using Serilog;
 using users_api.Configuration;
 using users_api.Data;
 using users_api.Endpoints;
+using users_api.Filters;
 using users_api.Middleware;
 using users_api.Models;
 using users_api.Services;
@@ -58,7 +60,21 @@ builder.Services.AddApiVersioning(options =>
 });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme()
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "JWT Authorization header using the Bearer scheme. Enter your token in the text input below."
+    });
+
+    // Apply security requirement only to endpoints with [Authorize]
+    options.OperationFilter<AuthorizeOperationFilter>();
+});
 
 builder.Services.AddDbContext<UsersDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -142,7 +158,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("UserOrAdmin", policy => policy.RequireRole("User", "Admin"));
+});
 
 var app = builder.Build();
 
@@ -168,6 +188,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapUsersEndpoints();
+app.MapAdminEndpoints();
 app.MapHealthChecks("/health");
 
 try
