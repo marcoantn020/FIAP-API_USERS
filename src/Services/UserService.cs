@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using MassTransit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ using Microsoft.IdentityModel.Tokens;
 using users_api.Configuration;
 using users_api.Data;
 using users_api.DTOs;
+using users_api.Events;
 using users_api.Exceptions;
 using users_api.Models;
 using JwtRegisteredClaimNames = Microsoft.IdentityModel.JsonWebTokens.JwtRegisteredClaimNames;
@@ -18,7 +20,8 @@ namespace users_api.Services;
 public class UserService(
     UserManager<User> userManager,
     UsersDbContext context,
-    IOptions<JwtOptions> jwtOptions
+    IOptions<JwtOptions> jwtOptions,
+    IPublishEndpoint publishEndpoint
     ) : IUserService
 {
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
@@ -53,6 +56,17 @@ public class UserService(
             );
             throw new ValidationException(errors);
         }
+
+        // Publish UserCreatedEvent to RabbitMQ
+        var userCreatedEvent = new UserCreatedEventV1(
+            EventId: Guid.NewGuid(),
+            OccurredAtUtc: DateTime.UtcNow,
+            UserId: user.Id,
+            Email: user.Email!,
+            DisplayName: user.DisplayName!
+        );
+
+        await publishEndpoint.Publish(userCreatedEvent);
 
         return new RegisterResponse(user.Id.ToString(), user.DisplayName!, user.Email);
     }

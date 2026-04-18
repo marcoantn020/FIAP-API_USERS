@@ -2,16 +2,19 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Asp.Versioning;
 using FluentValidation;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
 using users_api.Configuration;
 using users_api.Data;
 using users_api.Endpoints;
+using users_api.Events;
 using users_api.Filters;
 using users_api.Middleware;
 using users_api.Models;
@@ -38,6 +41,7 @@ builder.Host.UseSerilog((context, configuration) =>
 
 // Configure Options Pattern
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 
 // FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
@@ -92,6 +96,43 @@ builder.Services
     .AddDefaultTokenProviders();
 
 builder.Services.AddScoped<IUserService, UserService>();
+
+// MassTransit with RabbitMQ
+builder.Services.AddMassTransit(config =>
+{
+    config.UsingRabbitMq((context, cfg) =>
+    {
+        var rabbitMqOptions = context.GetRequiredService<IOptions<RabbitMqOptions>>().Value;
+
+        cfg.Host(rabbitMqOptions.Host, rabbitMqOptions.VirtualHost, h =>
+        {
+            h.Username(rabbitMqOptions.Username);
+            h.Password(rabbitMqOptions.Password);
+        });
+
+        // Configure JSON serialization
+        cfg.ConfigureJsonSerializerOptions(options =>
+        {
+            options.WriteIndented = false;
+            return options;
+        });
+
+        // Configure publish topology to send UserCreatedEventV1 to "user-created" queue
+        cfg.Message<UserCreatedEventV1>(x => x.SetEntityName("user-created"));
+        cfg.Publish<UserCreatedEventV1>(x =>
+        {
+            x.ExchangeType = "fanout";
+            // Bind a durable queue to the exchange
+            x.BindQueue("user-created", "user-created", queue =>
+            {
+                queue.Durable = true;
+                queue.AutoDelete = false;
+            });
+        });
+
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 // Health Checks
 builder.Services.AddHealthChecks()
