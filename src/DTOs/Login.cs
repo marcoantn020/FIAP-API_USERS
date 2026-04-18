@@ -6,8 +6,10 @@ public record LoginRequest(
     );
     
 public record LoginResponse(
-    string Token,
-    DateTime ExpireAt,
+    string AccessToken,
+    string RefreshToken,
+    DateTime AccessTokenExpireAt,
+    DateTime RefreshTokenExpireAt,
     string Username,
     string UserId
     );

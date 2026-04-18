@@ -1,5 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
+# 
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "users-api", "users-api.csproj", "{F924F034-A05A-42A7-B7B8-D8A804D9041B}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{691B6F62-9447-4D30-B3A4-84A2DA97E4F9}"

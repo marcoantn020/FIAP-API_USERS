@@ -1,25 +1,46 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using users_api.Common;
 using users_api.Models;
 
 namespace users_api.Data;
 
 public class UsersDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>
 {
-    public UsersDbContext()
-    {
-    }
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     public UsersDbContext(DbContextOptions<UsersDbContext> options) : base(options)
     {
     }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        if (!optionsBuilder.IsConfigured)
+        SetAuditableFields();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        SetAuditableFields();
+        return base.SaveChanges();
+    }
+
+    private void SetAuditableFields()
+    {
+        var entries = ChangeTracker.Entries<IAuditable>();
+
+        foreach (var entry in entries)
         {
-            optionsBuilder.UseNpgsql("Host=localhost;Database=fcg_users_db;Username=fcg;Password=fcgpw");
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    entry.Entity.CreatedAt = DateTime.UtcNow;
+                    break;
+                case EntityState.Modified:
+                    entry.Entity.UpdatedAt = DateTime.UtcNow;
+                    break;
+            }
         }
     }
 
@@ -35,6 +56,17 @@ public class UsersDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>
         builder.Entity<IdentityUserLogin<Guid>>().ToTable("UserLogins");
         builder.Entity<IdentityUserToken<Guid>>().ToTable("UserTokens");
         builder.Entity<IdentityRoleClaim<Guid>>().ToTable("RoleClaims");
-        
+
+        // RefreshToken configuration
+        builder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Token).IsRequired().HasMaxLength(500);
+            entity.HasIndex(e => e.Token).IsUnique();
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }
