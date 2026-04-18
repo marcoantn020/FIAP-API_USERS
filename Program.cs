@@ -51,6 +51,10 @@ builder.Services.AddApiVersioning(options =>
         new HeaderApiVersionReader("X-Api-Version"),
         new QueryStringApiVersionReader("api-version")
     );
+}).AddApiExplorer(options =>
+{
+    options.GroupNameFormat = "'v'VVV";
+    options.SubstituteApiVersionInUrl = true;
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -151,8 +155,13 @@ app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Users API v1");
+    });
 }
+
+app.UseHttpsRedirection();
 
 app.UseCors(app.Environment.IsDevelopment() ? "AllowAll" : "Production");
 
@@ -163,7 +172,6 @@ app.UseAuthorization();
 
 app.MapUsersEndpoints();
 app.MapHealthChecks("/health");
-app.UseHttpsRedirection();
 
 try
 {
