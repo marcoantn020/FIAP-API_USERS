@@ -27,12 +27,13 @@ public class UserService(
     {
         var user = new User
         {
-            UserName = request.Username,
+            UserName = request.Email.Split("@")[0],
+            DisplayName = request.DisplayName,
             Email = request.Email
         };
-        
+
         var result = await userManager.CreateAsync(user, request.Password);
-        if (result.Succeeded) return new RegisterResponse(user.Id.ToString(), user.UserName, user.Email);
+        if (result.Succeeded) return new RegisterResponse(user.Id.ToString(), user.DisplayName!, user.Email);
 
         var errors = result.Errors.ToDictionary(
             e => e.Code,
@@ -60,7 +61,7 @@ public class UserService(
             refreshToken.Token,
             accessTokenExpires,
             refreshToken.ExpiresAt,
-            user.UserName!,
+            user.DisplayName!,
             user.Id.ToString()
         );
     }
