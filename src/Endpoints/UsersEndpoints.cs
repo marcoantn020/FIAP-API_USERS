@@ -17,8 +17,7 @@ public static class UsersEndpoints
             .Build();
 
         var group = app.MapGroup("api/v{version:apiVersion}/users")
-            .WithApiVersionSet(versionSet)
-            .WithOpenApi();
+            .WithApiVersionSet(versionSet);
 
         group.MapPost("register", RegisterAsync)
             .AddEndpointFilter<ValidationFilter<RegisterRequest>>()
