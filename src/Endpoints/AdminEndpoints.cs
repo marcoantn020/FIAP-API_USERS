@@ -2,9 +2,12 @@ using System.Security.Claims;
 using Asp.Versioning;
 using Asp.Versioning.Builder;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using users_api.Common;
 using users_api.Data;
+using users_api.DTOs;
+using users_api.Extensions;
 using users_api.Models;
 
 namespace users_api.Endpoints;
@@ -24,9 +27,9 @@ public static class AdminEndpoints
 
         group.MapGet("users", GetAllUsersAsync)
             .WithName("GetAllUsers")
-            .WithSummary("Get all users (Admin only)")
-            .WithDescription("Returns a list of all registered users. Requires Admin role.")
-            .Produces<ApiResponse<List<UserDto>>>(StatusCodes.Status200OK)
+            .WithSummary("Get all users with pagination and filters (Admin only)")
+            .WithDescription("Returns a paginated list of users with optional filters. Requires Admin role.")
+            .Produces<ApiResponse<PagedResponse<UserDto>>>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status403Forbidden)
             .WithTags("Admin");
@@ -53,18 +56,55 @@ public static class AdminEndpoints
     }
 
     private static async Task<IResult> GetAllUsersAsync(
+        [AsParameters] PaginationParams paginationParams,
+        [AsParameters] UserFilterRequest filters,
         UsersDbContext context,
         UserManager<User> userManager)
     {
-        var users = await context.Users
+        // Start with base query
+        var query = context.Users
             .AsNoTracking()
-            .Where(u => u.DeletedAt == null)
-            .ToListAsync();
+            .Where(u => u.DeletedAt == null);
 
+        // Apply filters
+        if (!string.IsNullOrWhiteSpace(filters.Email))
+        {
+            query = query.Where(u => u.Email != null && u.Email.Contains(filters.Email));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.DisplayName))
+        {
+            query = query.Where(u => u.DisplayName != null && u.DisplayName.Contains(filters.DisplayName));
+        }
+
+        if (filters.CreatedAfter.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt >= filters.CreatedAfter.Value);
+        }
+
+        if (filters.CreatedBefore.HasValue)
+        {
+            query = query.Where(u => u.CreatedAt <= filters.CreatedBefore.Value);
+        }
+
+        // Order by creation date descending
+        query = query.OrderByDescending(u => u.CreatedAt);
+
+        // Apply pagination
+        var pagedUsers = await query.ToPagedAsync(paginationParams.PageNumber, paginationParams.PageSize);
+
+        // Map to DTOs with roles
         var userDtos = new List<UserDto>();
-        foreach (var user in users)
+        foreach (var user in pagedUsers.Items)
         {
             var roles = await userManager.GetRolesAsync(user);
+
+            // Apply role filter if specified
+            if (!string.IsNullOrWhiteSpace(filters.Role) && !roles.Contains(filters.Role))
+            {
+                continue;
+            }
+
             userDtos.Add(new UserDto(
                 user.Id,
                 user.Email!,
@@ -75,8 +115,16 @@ public static class AdminEndpoints
             ));
         }
 
+        // Create paged response with filtered DTOs
+        var response = new PagedResponse<UserDto>(
+            userDtos,
+            pagedUsers.TotalCount,
+            pagedUsers.PageNumber,
+            pagedUsers.PageSize
+        );
+
         return Results.Ok(
-            ApiResponse<List<UserDto>>.SuccessResponse(userDtos, "Users retrieved successfully.")
+            ApiResponse<PagedResponse<UserDto>>.SuccessResponse(response, "Users retrieved successfully.")
         );
     }
 
